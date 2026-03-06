@@ -1,17 +1,134 @@
 ---
 name: frontend
-description: Next.js 15 + App Router + shadcn/ui + Tailwind v4 patterns for production web apps
+description: Next.js 16 + App Router + shadcn/ui + Tailwind v4 patterns for production web apps
 when_to_use: When building any web application with the Next.js + shadcn + Tailwind stack
 ---
 
-# Frontend — Next.js 15 + shadcn/ui + Tailwind v4
+# Frontend — Next.js 16 + shadcn/ui + Tailwind v4
 
 ## Quick Reference
 
-**Stack:** Next.js 15 (App Router) / React 19 / TypeScript / Tailwind v4 / shadcn/ui
+**Stack:** Next.js 16.1+ (App Router) / React 19.2 / TypeScript 5+ / Tailwind v4 / shadcn/ui
+**Build tool:** Turbopack (default in Next.js 16, no `--turbopack` flag needed)
 **Package manager:** pnpm
+**Node.js:** 20.9+ minimum (Node 18 dropped)
 **Styling:** Tailwind utility classes + CSS variables for theming. No CSS modules, no styled-components.
 **Components:** shadcn/ui as the base. Extend, don't replace.
+
+## Next.js 16 Key Changes
+
+### Turbopack Is Default
+No more `--turbopack` flag. `next dev` and `next build` use Turbopack automatically.
+
+```json
+// ✅ Next.js 16 — clean scripts
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  }
+}
+```
+
+Turbopack config is now top-level (not under `experimental`):
+```ts
+// next.config.ts
+import type { NextConfig } from 'next'
+
+const nextConfig: NextConfig = {
+  turbopack: {
+    // options (no longer experimental.turbopack)
+  },
+}
+export default nextConfig
+```
+
+If you need Webpack for production: `next build --webpack`.
+
+### Async Request APIs (Breaking)
+`cookies()`, `headers()`, `draftMode()`, `params`, and `searchParams` are ALL async now. Synchronous access is fully removed.
+
+```tsx
+// ✅ Next.js 16 — async params
+export default async function Page(props: PageProps<'/blog/[slug]'>) {
+  const { slug } = await props.params
+  const query = await props.searchParams
+  return <h1>Blog Post: {slug}</h1>
+}
+
+// ❌ Next.js 15 style (BROKEN in 16)
+export default function Page({ params }: { params: { slug: string } }) {
+  return <h1>{params.slug}</h1>
+}
+```
+
+Use `npx next typegen` to auto-generate `PageProps`, `LayoutProps`, `RouteContext` type helpers.
+
+### Cache Components (opt-in, major feature)
+Mix static, cached, and dynamic content in a single route. Enable in config:
+
+```ts
+// next.config.ts
+const nextConfig: NextConfig = {
+  cacheComponents: true,
+}
+```
+
+Use `use cache` directive for cacheable components:
+```tsx
+"use cache"
+
+export async function ProductReviews({ productId }: { productId: string }) {
+  const reviews = await fetchReviews(productId)
+  return <ReviewList reviews={reviews} />
+}
+```
+
+Wrap dynamic content in `<Suspense>`:
+```tsx
+import { Suspense } from 'react'
+
+export default function ProductPage() {
+  return (
+    <div>
+      <ProductInfo />           {/* Static shell */}
+      <Suspense fallback={<CartSkeleton />}>
+        <Cart />                {/* Dynamic, deferred to request time */}
+      </Suspense>
+    </div>
+  )
+}
+```
+
+### React 19.2 Features
+- **View Transitions:** Native browser-powered route transition animations via `<ViewTransition>`
+- **`useEffectEvent()`:** Stable event handlers that don't re-trigger effects
+- **`<Activity>`:** Component for managing offscreen content lifecycle
+- **`refresh()`:** Granular cache refresh from client: `refresh(['notifications', 'unread-count'])`
+
+### Proxy (replaces middleware convention)
+The `middleware` convention is deprecated in favor of `proxy`:
+```ts
+// proxy.ts (replaces middleware.ts)
+export function proxy(request: Request) {
+  // routing, auth checks, redirects
+}
+```
+
+### Next.js DevTools MCP
+Next.js 16 ships with an MCP server for AI coding assistants:
+```json
+// .mcp.json
+{
+  "mcpServers": {
+    "next-devtools": {
+      "command": "npx",
+      "args": ["-y", "next-devtools-mcp@latest"]
+    }
+  }
+}
+```
 
 ## File Structure
 
@@ -132,7 +249,7 @@ Mobile-first. Always. Use Tailwind breakpoints: `sm:` (640px), `md:` (768px), `l
   </div>
 </section>
 
-// Sticky header
+// Sticky header with backdrop blur
 <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
 ```
 
@@ -201,16 +318,19 @@ import Image from "next/image"
   priority  // Above-the-fold images
   className="rounded-lg"
 />
-
-// ✅ For backgrounds, use CSS
-<div className="bg-[url('/pattern.svg')] bg-cover bg-center">
 ```
 
 ### Animation
 
-Use Tailwind's built-in animations or `tailwindcss-animate` (included with shadcn). For complex animations, use Framer Motion.
+Use Tailwind's built-in animations or `tailwindcss-animate` (included with shadcn). For route transitions, use React 19.2 View Transitions. For complex animations, use Framer Motion.
 
 ```tsx
+// ✅ React 19.2 View Transitions (route animations)
+import { ViewTransition } from 'react'
+<ViewTransition>
+  <Link href="/about">About</Link>
+</ViewTransition>
+
 // ✅ Tailwind animate (simple)
 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
 
@@ -222,23 +342,49 @@ Use Tailwind's built-in animations or `tailwindcss-animate` (included with shadc
 >
 ```
 
+### Tailwind v4 Theming
+
+Tailwind v4 uses CSS-first config. Theme defined in `app/globals.css` via `@theme`:
+
+```css
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0a;
+  --color-foreground: #ededed;
+  --color-primary: #3b82f6;
+  --font-sans: "Geist", sans-serif;
+  --font-mono: "Geist Mono", monospace;
+}
+```
+
+No `tailwind.config.ts` needed for basic theming.
+
 ## Anti-patterns
 
 - ❌ CSS modules or styled-components alongside Tailwind
 - ❌ `"use client"` on components that don't need interactivity
+- ❌ Synchronous `params` or `searchParams` access (broken in Next.js 16)
+- ❌ `tailwind.config.ts` for basic theming (use CSS `@theme` in v4)
+- ❌ `experimental.turbopack` in config (moved to top-level `turbopack`)
 - ❌ Inline styles (`style={{}}`) — use Tailwind classes
 - ❌ Modifying shadcn/ui base primitives in `components/ui/`
-- ❌ `useEffect` for data fetching — use Server Components or React Query
+- ❌ `useEffect` for data fetching — use Server Components or `use cache`
 - ❌ Hardcoded colors — use CSS variables (`text-foreground`, `bg-background`)
 - ❌ Desktop-first responsive (`lg:` then overriding down)
 - ❌ `<img>` tags — use `next/image`
 - ❌ `<a>` tags for internal links — use `next/link`
+- ❌ `--turbopack` flag in scripts (default in Next.js 16)
 
 ## Gotchas
 
-1. **Tailwind v4 uses CSS-first config.** No `tailwind.config.ts` by default. Theme in `app/globals.css` via `@theme`.
-2. **shadcn/ui uses CSS variables for theming.** Colors defined in `globals.css` as HSL values under `:root` and `.dark`.
-3. **`cn()` helper is essential.** Always use `cn()` from `lib/utils` for conditional classes: `cn("base-classes", condition && "conditional-class")`.
-4. **Server Components can't use hooks.** If you need state, extract the interactive part into a separate client component.
-5. **Fonts load in layout.tsx.** Use `next/font/google` or `next/font/local`. Apply via CSS variable, not className on every element.
-6. **Images in `public/` are static.** For dynamic images, use external URLs with `next.config.ts` `images.remotePatterns`.
+1. **Turbopack is default.** If you have a custom `webpack` config, the build will FAIL. Use `--webpack` flag to opt out, or migrate to Turbopack config.
+2. **All request APIs are async.** `cookies()`, `headers()`, `params`, `searchParams` must be awaited. Run `npx next typegen` for type helpers.
+3. **Cache Components are opt-in.** Set `cacheComponents: true` in next.config.ts. Without it, you get the old rendering model.
+4. **Tailwind v4 CSS-first config.** Theme in `globals.css` via `@theme`, not in `tailwind.config.ts`.
+5. **shadcn/ui uses CSS variables for theming.** Colors defined in `globals.css` as HSL values under `:root` and `.dark`.
+6. **`cn()` helper is essential.** Always use `cn()` from `lib/utils` for conditional classes.
+7. **Server Components can't use hooks.** Extract interactive parts into separate client components.
+8. **Fonts load in layout.tsx.** Use `next/font/google` or `next/font/local`. Apply via CSS variable.
+9. **`middleware.ts` is deprecated.** Use `proxy.ts` for routing, auth checks, redirects.
+10. **Next.js DevTools MCP is available.** Add `.mcp.json` for AI-assisted development and upgrades.
